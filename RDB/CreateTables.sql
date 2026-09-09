@@ -12,15 +12,16 @@ FOR LOGIN NandaSurendra;
 
 ALTER ROLE db_owner ADD MEMBER NandaSurendra;
 */
-Drop table if exists Room;
 drop table if exists RoomAvailability;
+drop table if exists Room;
+
 
 go
 
 create table Room
 (
     RoomID int identity(1,1) primary key,
-    RoomName varchar(10) not null,
+    RoomNumber varchar(10) not null,
     Whiteboard bit not null,
  );
 
