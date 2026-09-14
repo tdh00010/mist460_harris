@@ -195,10 +195,8 @@ begin
     set xact_abort on;
     if @AvailableDate is null or @StartTime is null or @EndTime is null
        or @StartTime >= @EndTime or datediff(minute, @StartTime, @EndTime) > 120
-       or datepart(minute, @StartTime) % 15 <> 0 or datepart(minute, @EndTime) % 15 <> 0
-       or datepart(second, @StartTime) <> 0 or datepart(second, @EndTime) <> 0
-       or datepart(nanosecond, @StartTime) <> 0 or datepart(nanosecond, @EndTime) <> 0
-        throw 50008, 'Choose 15 to 120 minutes on exact quarter-hour boundaries.', 1;
+        throw 50008, 'Enter a date and a time range of at most two hours.', 1;
+    -- ValidateRoomAvailability checks exact 15-minute boundaries when saving.
 
     begin try
         begin transaction;
@@ -208,16 +206,18 @@ begin
                        where RoomID = @RoomID and CurrentStatus = 'Available')
             throw 50010, 'Room does not exist or is unavailable.', 1;
 
+        -- Keep the original intervals locked until the booking is finished.
         select * into #Selected
         from dbo.RoomAvailability with (updlock, holdlock)
         where RoomID = @RoomID and AvailableDate = @AvailableDate
           and AvailableStartTime < @EndTime and AvailableEndTime > @StartTime;
 
-        if exists (select 1 from #Selected where ReservationID is not null or AvailabilityStatus <> 'Available')
-           or (select coalesce(sum(datediff(minute,
-               case when AvailableStartTime < @StartTime then @StartTime else AvailableStartTime end,
-               case when AvailableEndTime > @EndTime then @EndTime else AvailableEndTime end)), 0)
-               from #Selected) <> datediff(minute, @StartTime, @EndTime)
+        -- Reuse the search function to check that every requested minute is free.
+        declare @AvailableMinutes int;
+        select @AvailableMinutes = coalesce(sum(datediff(minute, SlotStart, SlotEnd)), 0)
+        from dbo.AvailableRoomSlots(@AvailableDate, @StartTime, @EndTime, @RoomID, null);
+
+        if @AvailableMinutes <> datediff(minute, @StartTime, @EndTime)
             throw 50011, 'The entire requested time must be available. Search again.', 1;
 
         insert dbo.Reservation(AppUserID, ReservationDateTime, ReservationStatus)
@@ -227,6 +227,8 @@ begin
         delete dbo.RoomAvailability
         where RoomAvailabilityID in (select RoomAvailabilityID from #Selected);
 
+        -- Save the free time before, the free time after, and the reservation.
+        -- The triggers reject invalid bookings; any failure rolls everything back.
         insert dbo.RoomAvailability
             (RoomID, AvailableDate, AvailableStartTime, AvailableEndTime, AvailabilityStatus, ReservationID)
         select @RoomID, @AvailableDate, AvailableStartTime, @StartTime, 'Available', null
