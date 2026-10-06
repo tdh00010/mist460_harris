@@ -12,7 +12,7 @@ where r.CurrentStatus = 'Available'
 go
 
 -- 2. Room capacity and specifications. Use NULL to list all rooms.
-create or alter function dbo.RoomSpecifications(@RoomID int)
+create or alt8er function dbo.RoomSpecifications(@RoomID int)
 returns table
 as return
 (
